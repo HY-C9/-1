@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบรวมยอดแจ้งแอด Premium - Smart Eye Care</title>
+    <title>EasyReport Premium - Smart Eye Care</title>
 
     <link rel="icon" type="image/png" href="https://png.pngtree.com/png-clipart/20240508/ourlarge/pngtree-golden-numerical-number-1-png-image_270386.png">
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
@@ -162,8 +162,8 @@
     <h2>📊 <span>EasyReport</span> รวมยอดแจ้งแอด</h2>
     
     <div class="input-group">
-        <span class="label">📥 วางข้อมูลรายงานได้เลยครับ</span>
-        <textarea id="inputText" placeholder="ก๊อปปี้รายงานมาวางที่นี่..."></textarea>
+        <span class="label">📥 วางข้อมูลรายงานที่นี่ (ใส่ : หรือไม่ใส่ก็ได้)</span>
+        <textarea id="inputText" placeholder="เช่น แอดเข้า 10 / เชือด 2070..."></textarea>
     </div>
     
     <div class="button-stack">
@@ -222,6 +222,7 @@
             
         } 
         else {
+            // Regex แบบยืดหยุ่น: (?:แอดเข้า|In)\s*[:]?\s* คือเจอคำหลัก ตามด้วย : (จะมีหรือไม่มีก็ได้) และช่องว่าง
             const keys = [
                 { id: 'in', regex: /(?:แอดเข้า|In)\s*[:]?\s*([^\n\r]+)/gi },
                 { id: 'out', regex: /(?:ออกกลุ่ม|Out)\s*[:]?\s*([^\n\r]+)/gi },
@@ -246,26 +247,36 @@
                 let match;
                 while ((match = k.regex.exec(text)) !== null) {
                     let rawLine = match[1].trim().replace(/,/g, '');
+                    
                     if (k.isMoney) {
                         let chunks = rawLine.split(/\s+/);
                         let lineMoneyCount = 0;
                         let foundMoneyInLine = false;
 
                         chunks.forEach(chunk => {
-                            let parts = chunk.split('/').map(p => parseInt(p)).filter(n => !isNaN(n));
+                            // รองรับทั้งแบบ 2070*1, 1/2070 หรือ 2070 เดี่ยวๆ
+                            let parts = chunk.split(/[*\/]/).map(p => parseInt(p)).filter(n => !isNaN(n));
                             let money = 0, count = 0;
+
                             if (parts.length === 2) {
+                                // กรณี 1*2070 หรือ 2070/1
                                 if (parts[0] > 100) { money = parts[0]; count = parts[1]; }
-                                else if (parts[1] > 100) { count = parts[0]; money = parts[1]; }
+                                else { count = parts[0]; money = parts[1]; }
                             } else if (parts.length === 1 && parts[0] > 100) {
+                                // กรณีพิมพ์ยอดเดี่ยวๆ เช่น เชือด 2070 -> นับเงิน 2070 จำนวน 1
                                 money = parts[0]; count = 1;
                             }
+
                             if (money > 0) {
                                 foundMoneyInLine = true;
                                 lineMoneyCount += count;
-                                if (k.id === 'kill') for(let i=0; i<count; i++) killMoneyList.push(money);
+                                if (k.id === 'kill') {
+                                    for(let i=0; i<count; i++) killMoneyList.push(money);
+                                }
                             }
                         });
+
+                        // ถ้าไม่เจอรูปแบบเงินที่ระบุชัดเจน ให้ลองดึงตัวเลขตัวแรกมาบวกปกติ
                         if (!foundMoneyInLine) {
                             let simpleNum = parseInt(rawLine);
                             if (!isNaN(simpleNum)) totals[k.id] += simpleNum;
@@ -273,17 +284,20 @@
                             totals[k.id] += lineMoneyCount;
                         }
                     } else {
+                        // นับยอดรวมตัวเลขธรรมดา
                         let numbers = rawLine.match(/\d+/g);
                         if (numbers) totals[k.id] += numbers.map(Number).reduce((a, b) => a + b, 0);
                     }
                 }
             });
 
+            // จัดกลุ่มยอดเชือด เช่น 2070*2
             let moneyFrequency = {};
             killMoneyList.forEach(m => moneyFrequency[m] = (moneyFrequency[m] || 0) + 1);
             let moneyOutput = Object.keys(moneyFrequency).sort((a,b)=>a-b).map(m => `${m}*${moneyFrequency[m]}`).join('\n');
 
             let finalOutput = `[❗️แผนก 1 ]\nแจ้งแอท-สินค้ามือ 2 \n\n– แอดเข้า(进粉) : ${totals.in}\n– ออกกลุ่ม : ${totals.out}\n– บล็อค : ${totals.block}\n– ซ้ำ(重复) : ${totals.dup}\n– เหลือ(剩下) : ${totals.remain}\n– กำลังโพสขาย : ${totals.posting}\n– เข้ามาไม่โพส : ${totals.notPost}\n– เข้าออฟ : ${totals.off}\n\n– เปิดบิล : ${totals.bill}\n– เชือด : ${totals.kill}\n– งานสุดท้าย : ${totals.lastWork}\n– ซ่อมแรก : ${totals.fixFirst}\n– ซ่อมสุดท้าย : ${totals.fixLast}`;
+            
             if(moneyOutput) finalOutput += `\n\n${moneyOutput}`;
             
             document.getElementById('result').innerText = finalOutput.trim();
