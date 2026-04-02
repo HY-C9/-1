@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EasyReport Premium - Smart Eye Care</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
     <link rel="icon" type="image/png" href="https://png.pngtree.com/png-clipart/20240508/ourlarge/pngtree-golden-numerical-number-1-png-image_270386.png">
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
@@ -140,6 +142,32 @@
             text-align: left;
         }
 
+        /* 🌟 เพิ่มสไตล์สำหรับกล่องแสดงรูปภาพ QR Code */
+        .preview-container {
+            margin-top: 15px;
+            display: none;
+            text-align: center;
+            background: var(--input-bg);
+            padding: 15px;
+            border-radius: 16px;
+            border: 1px dashed var(--border-color);
+        }
+        
+        #qrPreviewImg {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 12px;
+            margin-top: 10px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+
+        .qr-label {
+            display: block;
+            color: var(--primary-color);
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
         .toast {
             position: fixed;
             bottom: 30px;
@@ -162,8 +190,8 @@
     <h2>📊 <span>EasyReport</span> รวมยอดแจ้งแอด</h2>
     
     <div class="input-group">
-        <span class="label">📥 วางข้อมูลรายงานที่นี่ (ใส่ : หรือไม่ใส่ก็ได้)</span>
-        <textarea id="inputText" placeholder="Copy แจ้งแอดมาวางได้เลย"></textarea>
+        <span class="label">📥 วางข้อมูลรายงาน หรือรูป QR Code ที่นี่</span>
+        <textarea id="inputText" placeholder="Copy แจ้งแอด หรือวางรูป QR Code มาได้เลย"></textarea>
     </div>
     
     <div class="button-stack">
@@ -176,15 +204,117 @@
         <div id="result">พร้อมสรุปยอดให้ที่นี่ครับ...</div>
     </div>
     
+    <div id="previewContainer" class="preview-container">
+        <span class="qr-label">🖼️ รูปภาพที่สแกน:</span>
+        <img id="qrPreviewImg" src="">
+    </div>
+    
     <button class="btn-copy" id="copyBtn" onclick="copyResult()">✨ คัดลอกไปใช้งาน</button>
 </div>
 
 <div id="toast" class="toast">คัดลอกลงคลิปบอร์ดแล้วครับ! ✅</div>
 
 <script>
+    // === ระบบดักจับการ Ctrl + V (วางรูปภาพ) ===
+    window.addEventListener('paste', function (event) {
+        const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+        
+        for (let index in items) {
+            const item = items[index];
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                event.preventDefault(); 
+                
+                const blob = item.getAsFile();
+                const reader = new FileReader();
+                
+                reader.onload = function (e) {
+                    const base64Data = e.target.result;
+                    
+                    const previewContainer = document.getElementById('previewContainer');
+                    const previewImg = document.getElementById('qrPreviewImg');
+                    previewImg.src = base64Data;
+                    previewContainer.style.display = 'block';
+
+                    document.getElementById('result').innerText = "กำลังสแกน QR Code... ⏳";
+                    document.getElementById('result').style.borderColor = "var(--primary-color)";
+                    
+                    // ปรับขนาด font ตอนสแกน
+                    document.getElementById('result').style.fontSize = "16px";
+                    document.getElementById('result').style.textAlign = "center";
+
+                    scanQRCodeFromBase64(base64Data);
+                };
+                reader.readAsDataURL(blob);
+            }
+        }
+    });
+
+    // === ฟังก์ชันสแกน QR Code ===
+    function scanQRCodeFromBase64(base64) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d", { willReadFrequently: true });
+            canvas.width = img.width;
+            canvas.height = img.height;
+            context.drawImage(img, 0, 0, img.width, img.height);
+            
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "attemptBoth" 
+            });
+
+            if (code) {
+                const qrData = code.data;
+                let account = null;
+
+                const ewalletMatch = qrData.match(/0315(\d{15})/); 
+                const phoneMatch = qrData.match(/0113(0066\d{9})/); 
+                const cidMatch = qrData.match(/0213(\d{13})/);     
+
+                if (ewalletMatch) {
+                    account = ewalletMatch[1]; 
+                } else if (phoneMatch) {
+                    account = '0' + phoneMatch[1].substring(4); 
+                } else if (cidMatch) {
+                    account = cidMatch[1]; 
+                } else {
+                    const fallbackMatch = qrData.match(/\d{15}/);
+                    if (fallbackMatch) account = fallbackMatch[0];
+                }
+
+                if (account) {
+                    if (account.length === 15) {
+                        account = account.replace(/(\d{3})(\d{8})(\d{4})/, '$1-$2-$3');
+                    }
+                    document.getElementById('result').innerText = account;
+                    document.getElementById('result').style.borderColor = "#10b981"; 
+                    document.getElementById('result').style.fontSize = "24px";
+                    document.getElementById('result').style.fontWeight = "bold";
+                } else {
+                    document.getElementById('result').innerText = `สแกนติดแต่ไม่พบรูปแบบเลขบัญชี\nข้อมูลดิบ: ${qrData}`;
+                    document.getElementById('result').style.borderColor = "#f59e0b"; 
+                    document.getElementById('result').style.fontSize = "14px";
+                }
+            } else {
+                document.getElementById('result').innerText = "❌ สแกนไม่พบ QR Code (รูปภาพอาจไม่ชัดหรือเล็กเกินไป)";
+                document.getElementById('result').style.borderColor = "#ef4444"; 
+                document.getElementById('result').style.fontSize = "14px";
+            }
+        };
+        img.src = base64;
+    }
+
+    // === ฟังก์ชันคำนวณข้อความ ===
     function calculateTotal() {
         const text = document.getElementById('inputText').value;
         if (!text.trim()) return;
+
+        // Reset style กลับเป็นแบบข้อความปกติ
+        document.getElementById('result').style.fontSize = "14px";
+        document.getElementById('result').style.textAlign = "left";
+        document.getElementById('result').style.fontWeight = "normal";
 
         const isFinancialReport = /总入款金额|出款/.test(text);
 
@@ -222,7 +352,6 @@
             
         } 
         else {
-            // Regex แบบยืดหยุ่น: (?:แอดเข้า|In)\s*[:]?\s* คือเจอคำหลัก ตามด้วย : (จะมีหรือไม่มีก็ได้) และช่องว่าง
             const keys = [
                 { id: 'in', regex: /(?:แอดเข้า|In)\s*[:]?\s*([^\n\r]+)/gi },
                 { id: 'out', regex: /(?:ออกกลุ่ม|Out)\s*[:]?\s*([^\n\r]+)/gi },
@@ -254,16 +383,13 @@
                         let foundMoneyInLine = false;
 
                         chunks.forEach(chunk => {
-                            // รองรับทั้งแบบ 2070*1, 1/2070 หรือ 2070 เดี่ยวๆ
                             let parts = chunk.split(/[*\/]/).map(p => parseInt(p)).filter(n => !isNaN(n));
                             let money = 0, count = 0;
 
                             if (parts.length === 2) {
-                                // กรณี 1*2070 หรือ 2070/1
                                 if (parts[0] > 100) { money = parts[0]; count = parts[1]; }
                                 else { count = parts[0]; money = parts[1]; }
                             } else if (parts.length === 1 && parts[0] > 100) {
-                                // กรณีพิมพ์ยอดเดี่ยวๆ เช่น เชือด 2070 -> นับเงิน 2070 จำนวน 1
                                 money = parts[0]; count = 1;
                             }
 
@@ -276,7 +402,6 @@
                             }
                         });
 
-                        // ถ้าไม่เจอรูปแบบเงินที่ระบุชัดเจน ให้ลองดึงตัวเลขตัวแรกมาบวกปกติ
                         if (!foundMoneyInLine) {
                             let simpleNum = parseInt(rawLine);
                             if (!isNaN(simpleNum)) totals[k.id] += simpleNum;
@@ -284,14 +409,12 @@
                             totals[k.id] += lineMoneyCount;
                         }
                     } else {
-                        // นับยอดรวมตัวเลขธรรมดา
                         let numbers = rawLine.match(/\d+/g);
                         if (numbers) totals[k.id] += numbers.map(Number).reduce((a, b) => a + b, 0);
                     }
                 }
             });
 
-            // จัดกลุ่มยอดเชือด เช่น 2070*2
             let moneyFrequency = {};
             killMoneyList.forEach(m => moneyFrequency[m] = (moneyFrequency[m] || 0) + 1);
             let moneyOutput = Object.keys(moneyFrequency).sort((a,b)=>a-b).map(m => `${m}*${moneyFrequency[m]}`).join('\n');
@@ -310,11 +433,18 @@
         document.getElementById('inputText').value = "";
         document.getElementById('result').innerText = "พร้อมสรุปยอดให้ที่นี่ครับ...";
         document.getElementById('result').style.borderColor = "#475569";
+        
+        // Reset styles and hide image preview
+        document.getElementById('result').style.fontSize = "14px";
+        document.getElementById('result').style.textAlign = "left";
+        document.getElementById('result').style.fontWeight = "normal";
+        document.getElementById('previewContainer').style.display = 'none';
+        document.getElementById('qrPreviewImg').src = "";
     }
 
     function copyResult() {
         const text = document.getElementById('result').innerText;
-        if(text.includes("พร้อมสรุปยอด")) return;
+        if(text.includes("พร้อมสรุปยอด") || text.includes("กำลังสแกน")) return;
         navigator.clipboard.writeText(text).then(() => {
             const t = document.getElementById('toast');
             t.style.display = 'block';
